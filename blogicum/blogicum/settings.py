@@ -104,10 +104,14 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
+STATICFILES_DIRS = [
+    BASE_DIR / 'static_dev'
+]
+
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 INTERNAL_IPS = ['*', '127.0.0.1', 'localhost']
 
-MAX_CHAR_FIELD_LENGTH = 256
+MAX_LENGTH = 256
 
 POSTS_PER_PAGE = 10

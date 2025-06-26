@@ -47,12 +47,12 @@ urlpatterns = [
         name='delete_comment'
     ),
     path(
-        'profile/edit',
+        'profile/edit/',
         views.ProfileUpdateView.as_view(),
         name='edit_profile'
     ),
     path(
-        'profile/<str:username>',
+        'profile/<str:username>/',
         views.ProfileDetailView.as_view(),
         name='profile'
     ),

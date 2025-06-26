@@ -1,14 +1,13 @@
 from django.contrib.auth import get_user_model
 from django.db import models
-from django.urls import reverse
 
-from blogicum.settings import MAX_CHAR_FIELD_LENGTH
-from core.models import BaseModel
+from blogicum.settings import MAX_LENGTH
+from core.models import TimeStampedPublishedModel
 
 User = get_user_model()
 
 
-class Location(BaseModel):
+class Location(TimeStampedPublishedModel):
     """
     Model representing a location where the post was published from.
 
@@ -17,7 +16,7 @@ class Location(BaseModel):
     """
 
     name = models.CharField(
-        max_length=MAX_CHAR_FIELD_LENGTH,
+        max_length=MAX_LENGTH,
         verbose_name='Название места'
     )
 
@@ -26,10 +25,10 @@ class Location(BaseModel):
         verbose_name_plural = 'Местоположения'
 
     def __str__(self):
-        return self.name
+        return f'Location: {self.name} (ID: {self.pk})'
 
 
-class Category(BaseModel):
+class Category(TimeStampedPublishedModel):
     """
     Model representing a blog category.
 
@@ -40,7 +39,7 @@ class Category(BaseModel):
     """
 
     title = models.CharField(
-        max_length=MAX_CHAR_FIELD_LENGTH,
+        max_length=MAX_LENGTH,
         verbose_name='Заголовок'
     )
     description = models.TextField(verbose_name='Описание')
@@ -58,10 +57,10 @@ class Category(BaseModel):
         verbose_name_plural = 'Категории'
 
     def __str__(self):
-        return self.title
+        return f'Category: {self.title} (ID: {self.pk})'
 
 
-class Post(BaseModel):
+class Post(TimeStampedPublishedModel):
     """
     Model representing a blog post.
 
@@ -76,7 +75,7 @@ class Post(BaseModel):
     """
 
     title = models.CharField(
-        max_length=MAX_CHAR_FIELD_LENGTH,
+        max_length=MAX_LENGTH,
         verbose_name='Заголовок'
     )
     text = models.TextField(verbose_name='Текст')
@@ -92,7 +91,6 @@ class Post(BaseModel):
         User,
         on_delete=models.CASCADE,
         verbose_name='Автор публикации',
-        related_name='posts'
     )
     location = models.ForeignKey(
         Location,
@@ -100,24 +98,27 @@ class Post(BaseModel):
         blank=True,
         null=True,
         verbose_name='Местоположение',
-        related_name='posts'
     )
     category = models.ForeignKey(
         Category,
         on_delete=models.SET_NULL,
         null=True,
         verbose_name='Категория',
-        related_name='posts'
     )
-    image = models.ImageField('Изображение', upload_to='posts_images', blank=True)
+    image = models.ImageField(
+        'Изображение',
+        upload_to='posts_images',
+        blank=True
+    )
 
     class Meta:
         verbose_name = 'публикация'
         verbose_name_plural = 'Публикации'
         ordering = ('-created_at', 'title')
+        default_related_name = 'posts'
 
     def __str__(self):
-        return self.title
+        return f'Post: {self.title} by {self.author.username}'
 
 
 class Comment(models.Model):
@@ -135,7 +136,6 @@ class Comment(models.Model):
     post = models.ForeignKey(
         Post,
         on_delete=models.CASCADE,
-        related_name='comments',
         verbose_name='Соответсвующая публикация'
     )
     author = models.ForeignKey(
@@ -149,12 +149,10 @@ class Comment(models.Model):
     )
 
     class Meta:
-        ordering = ('-created_at',)
+        ordering = ('created_at',)
         verbose_name = 'комментария'
         verbose_name_plural = 'Комментарии'
+        default_related_name = 'comments'
 
-    def get_absolute_url(self):
-        return reverse(
-            'blog:profile',
-            kwargs={'username': self.author.username}
-        )
+    def __str__(self):
+        return f'Comment by {self.author.username} on Post ID {self.post.pk}'

@@ -1,7 +1,7 @@
 from django.db import models
 
 
-class BaseModel(models.Model):
+class TimeStampedPublishedModel(models.Model):
     """Abstact model adds the flag is_published and the field created_at."""
 
     created_at = models.DateTimeField(
