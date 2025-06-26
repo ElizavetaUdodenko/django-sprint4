@@ -150,3 +150,10 @@ media/
 
 sent_emails/
 
+# fixtures and db
+db.json
+db.sqlite3
+
+# tests
+tests/
+

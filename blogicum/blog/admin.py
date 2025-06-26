@@ -58,7 +58,6 @@ class CommentAdmin(admin.ModelAdmin):
     )
 
 
-
 class CategoryAdmin(admin.ModelAdmin):
     inlines = (
         PostInLine,
