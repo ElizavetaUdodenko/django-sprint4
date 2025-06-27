@@ -1,80 +1,65 @@
 from django.contrib.auth import get_user_model, logout
-from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
+from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.views import LogoutView
 from django.db.models import Count
 from django.http import Http404
-from django.shortcuts import get_object_or_404, redirect, render
+from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views.generic import (CreateView, DeleteView, DetailView, ListView,
                                   UpdateView)
-from django.views.generic.list import MultipleObjectMixin
 
-from blog.models import Category, Comment, Post
 from blogicum.settings import POSTS_PER_PAGE
 
 from .forms import CommentForm, PostForm, UserUpdateForm
+from .mixins import OnlyAuthorMixin, CommentMixin
+from .models import Category, Comment, Post
 
 User = get_user_model()
 
 POST_NOT_FOUND_MESSAGE = 'Post Not Found.'
 
 
-def get_published_posts():
+def get_user(username):
+    """Return the user object based on the provided username."""
+    return get_object_or_404(User, username=username)
+
+
+def get_published_category(category_slug):
+    """Return a published category based on the provided slug."""
+    return (
+        get_object_or_404(
+            Category,
+            slug=category_slug,
+            is_published=True
+        )
+    )
+
+
+def get_posts(apply_general_filter=False, apply_comments_count=False):
     """
-    Returns a queryset of posts that are published and available for display.
+    Return a queryset of posts with optional filtering and comment counting.
+
+    Args:
+        apply_general_filter (bool): Whether to filter by publication status.
+        apply_comments_count (bool): Whether to annotate comment count.
 
     Returns:
-        QuerySet: A queryset of published Post objects.
+        QuerySet: The filtered and/or annotated queryset of posts.
     """
-    return (
-        Post.objects
-        .select_related('author', 'category', 'location')
-        .filter(
+    posts = Post.objects.select_related('author', 'category', 'location')
+    if apply_general_filter:
+        posts = posts.filter(
             category__is_published=True,
             is_published=True,
             pub_date__date__lte=timezone.now()
         )
-        .annotate(comment_count=Count('comments'))
-        .order_by('-pub_date', 'title')
-    )
-
-
-def redirect_to_profile_page(username):
-    """
-    Return the URL to the user's profile page.
-
-    Args:
-        username (str): Username of the user.
-
-    Returns:
-        str: URL to the user's profile page.
-    """
-    return reverse('blog:profile', kwargs={'username': username})
-
-
-def redirect_to_post_page(post_id):
-    """
-    Return the URL to the post detail page.
-
-    Args:
-        post_id (int): ID of the post.
-
-    Returns:
-        str: URL to the post detail page.
-    """
-    return reverse(
-        'blog:post_detail',
-        kwargs={'post_id': post_id}
-    )
-
-
-class OnlyAuthorMixin(UserPassesTestMixin):
-    """Restrict access to views only for the author of the object."""
-
-    def test_func(self):
-        object = self.get_object()
-        return object.author == self.request.user
+    if apply_comments_count:
+        posts = (
+            posts.annotate(comment_count=Count('comments'))
+            .order_by('-pub_date', 'title')
+        )
+    return posts
 
 
 class BlogLogoutView(LoginRequiredMixin, LogoutView):
@@ -89,32 +74,38 @@ class PostsListView(ListView):
     """Display the homepage with the list of published posts."""
 
     template_name = 'blog/index.html'
-    queryset = get_published_posts()
+    queryset = get_posts(apply_general_filter=True, apply_comments_count=True)
     paginate_by = POSTS_PER_PAGE
 
 
-class ProfileDetailView(DetailView, MultipleObjectMixin):
+class ProfileDetailView(ListView):
     """Display a user's profile and their posts."""
 
-    model = User
+    model = Post
     template_name = 'blog/profile.html'
-    context_object_name = 'profile'
-    slug_field = 'username'
-    slug_url_kwarg = 'username'
     paginate_by = POSTS_PER_PAGE
 
-    def get_context_data(self, **kwargs):
-        user = self.get_object()
+    def get_queryset(self):
+        user = get_user(self.kwargs['username'])
         if self.request.user.is_authenticated and self.request.user == user:
-            posts = (
-                Post.objects
-                .filter(author=user)
-                .annotate(comment_count=Count('comments'))
-                .order_by('-pub_date', 'title')
+            posts = posts = get_posts(
+                apply_general_filter=False,
+                apply_comments_count=True
             )
         else:
-            posts = get_published_posts().filter(author=user)
-        context = super().get_context_data(object_list=posts, **kwargs)
+            posts = get_posts(
+                apply_general_filter=True,
+                apply_comments_count=True
+            )
+        posts = posts.filter(author=user)
+        return posts
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context = {
+            'profile': get_user(self.kwargs['username']),
+            'page_obj': self.get_queryset()
+        }
         return context
 
 
@@ -129,7 +120,10 @@ class ProfileUpdateView(LoginRequiredMixin, UpdateView):
         return self.request.user
 
     def get_success_url(self):
-        return redirect_to_profile_page(self.request.user.username)
+        return reverse(
+            'blog:profile',
+            kwargs={'username': self.request.user.username}
+        )
 
 
 class CategoryListView(ListView):
@@ -140,16 +134,17 @@ class CategoryListView(ListView):
     paginate_by = POSTS_PER_PAGE
 
     def get_queryset(self):
-        self.category = get_object_or_404(
-            Category,
-            slug=self.kwargs['category_slug'],
-            is_published=True
+        category = get_published_category(self.kwargs['category_slug'])
+        return (
+            get_posts(apply_general_filter=True, apply_comments_count=True)
+            .filter(category=category)
         )
-        return get_published_posts().filter(category=self.category)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['category'] = self.category
+        context['category'] = (
+            get_published_category(self.kwargs['category_slug'])
+        )
         return context
 
 
@@ -160,14 +155,16 @@ class PostDetailView(DetailView):
     template_name = 'blog/detail.html'
     pk_url_kwarg = 'post_id'
 
-    def get_queryset(self):
-        if not self.request.user.is_authenticated:
-            return get_published_posts()
-        return Post.objects.all()
-
     def get_object(self, queryset=None):
         post = super().get_object(queryset)
-        if not post.is_published and self.request.user != post.author:
+        if (
+            self.request.user != post.author
+            and (
+                not post.is_published
+                or not post.category.is_published
+                or post.pub_date >= timezone.now()
+            )
+        ):
             raise Http404(POST_NOT_FOUND_MESSAGE)
         return post
 
@@ -175,6 +172,7 @@ class PostDetailView(DetailView):
         context = super().get_context_data(**kwargs)
         comments = (
             Comment.objects
+            .select_related('author')
             .filter(post=self.object)
         )
         context['form'] = CommentForm()
@@ -194,7 +192,10 @@ class PostCreateView(LoginRequiredMixin, CreateView):
         return super().form_valid(form)
 
     def get_success_url(self):
-        return redirect_to_profile_page(self.request.user.username)
+        return reverse(
+            'blog:profile',
+            kwargs={'username': self.request.user.username}
+        )
 
 
 class PostUpdateView(OnlyAuthorMixin, UpdateView):
@@ -205,12 +206,6 @@ class PostUpdateView(OnlyAuthorMixin, UpdateView):
     template_name = 'blog/create.html'
     pk_url_kwarg = 'post_id'
 
-    def handle_no_permission(self):
-        return redirect('blog:post_detail', post_id=self.kwargs['post_id'])
-
-    def get_success_url(self):
-        return redirect_to_post_page(self.kwargs['post_id'])
-
 
 class PostDeleteView(OnlyAuthorMixin, DeleteView):
     """Allow authors to delete their posts."""
@@ -220,7 +215,10 @@ class PostDeleteView(OnlyAuthorMixin, DeleteView):
     pk_url_kwarg = 'post_id'
 
     def get_success_url(self):
-        return redirect_to_profile_page(self.request.user.username)
+        return reverse(
+            'blog:profile',
+            kwargs={'username': self.request.user.username}
+        )
 
 
 class CommentCreateView(LoginRequiredMixin, CreateView):
@@ -230,41 +228,26 @@ class CommentCreateView(LoginRequiredMixin, CreateView):
     form_class = CommentForm
     template_name = 'blog/comment.html'
 
-    def dispatch(self, request, *args, **kwargs):
-        try:
-            post_id = self.kwargs.get('post_id')
-            self.post_instance = get_object_or_404(Post, id=post_id)
-        except Http404:
-            raise Http404("Post Not Found.")
-        return super().dispatch(request, *args, **kwargs)
-
     def form_valid(self, form):
-        form.instance.post_id = self.kwargs['post_id']
+        form.instance.post = get_object_or_404(Post, id=self.kwargs['post_id'])
         form.instance.author = self.request.user
         return super().form_valid(form)
 
     def get_success_url(self):
-        return redirect_to_post_page(self.kwargs['post_id'])
+        return reverse(
+            'blog:post_detail',
+            kwargs={'post_id': self.kwargs['post_id']}
+        )
 
 
-class CommentUpdateView(OnlyAuthorMixin, UpdateView):
+class CommentUpdateView(OnlyAuthorMixin, CommentMixin, UpdateView):
     """Allow authors to update their comments."""
 
-    model = Comment
     form_class = CommentForm
     template_name = 'blog/comment.html'
-    pk_url_kwarg = 'comment_id'
-
-    def get_success_url(self):
-        return redirect_to_post_page(self.kwargs['post_id'])
 
 
-class CommentDeleteView(OnlyAuthorMixin, DeleteView):
+class CommentDeleteView(OnlyAuthorMixin, CommentMixin, DeleteView):
     """Allow authors to delete their comments."""
 
-    model = Comment
     template_name = 'blog/comment.html'
-    pk_url_kwarg = 'comment_id'
-
-    def get_success_url(self):
-        return redirect_to_post_page(self.kwargs['post_id'])
