@@ -1,6 +1,7 @@
 from django.contrib.auth import get_user_model, logout
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.views import LogoutView
+from django.core.paginator import Paginator
 from django.db.models import Count
 from django.http import Http404
 from django.shortcuts import get_object_or_404, render
@@ -36,25 +37,25 @@ def get_published_category(category_slug):
     )
 
 
-def get_posts(apply_general_filter=False, apply_comments_count=False):
+def get_posts(is_published_only=False, is_comments_count_required=False):
     """
     Return a queryset of posts with optional filtering and comment counting.
 
     Args:
-        apply_general_filter (bool): Whether to filter by publication status.
-        apply_comments_count (bool): Whether to annotate comment count.
+        is_published_only (bool): Whether to filter by publication status.
+        is_comments_count_required (bool): Whether to annotate comment count.
 
     Returns:
         QuerySet: The filtered and/or annotated queryset of posts.
     """
     posts = Post.objects.select_related('author', 'category', 'location')
-    if apply_general_filter:
+    if is_published_only:
         posts = posts.filter(
             category__is_published=True,
             is_published=True,
             pub_date__date__lte=timezone.now()
         )
-    if apply_comments_count:
+    if is_comments_count_required:
         posts = (
             posts.annotate(comment_count=Count('comments'))
             .order_by('-pub_date', 'title')
@@ -74,37 +75,43 @@ class PostsListView(ListView):
     """Display the homepage with the list of published posts."""
 
     template_name = 'blog/index.html'
-    queryset = get_posts(apply_general_filter=True, apply_comments_count=True)
+    queryset = get_posts(
+        is_published_only=True,
+        is_comments_count_required=True
+    )
     paginate_by = POSTS_PER_PAGE
 
 
 class ProfileDetailView(ListView):
     """Display a user's profile and their posts."""
 
-    model = Post
+    model = User
     template_name = 'blog/profile.html'
     paginate_by = POSTS_PER_PAGE
 
     def get_queryset(self):
         user = get_user(self.kwargs['username'])
         if self.request.user.is_authenticated and self.request.user == user:
-            posts = posts = get_posts(
-                apply_general_filter=False,
-                apply_comments_count=True
+            posts = get_posts(
+                is_published_only=False,
+                is_comments_count_required=True
             )
         else:
             posts = get_posts(
-                apply_general_filter=True,
-                apply_comments_count=True
+                is_published_only=True,
+                is_comments_count_required=True
             )
         posts = posts.filter(author=user)
         return posts
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        paginator = Paginator(self.get_queryset(), POSTS_PER_PAGE)
+        page_number = self.request.GET.get('page')
+        page_obj = paginator.get_page(page_number)
         context = {
             'profile': get_user(self.kwargs['username']),
-            'page_obj': self.get_queryset()
+            'page_obj': page_obj
         }
         return context
 
@@ -136,7 +143,7 @@ class CategoryListView(ListView):
     def get_queryset(self):
         category = get_published_category(self.kwargs['category_slug'])
         return (
-            get_posts(apply_general_filter=True, apply_comments_count=True)
+            get_posts(is_published_only=True, is_comments_count_required=True)
             .filter(category=category)
         )
 
