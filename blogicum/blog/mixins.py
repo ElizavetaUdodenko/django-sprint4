@@ -22,7 +22,7 @@ class OnlyAuthorMixin(UserPassesTestMixin):
         )
 
 
-class CommentMixin():
+class CommentMixin:
     """Mixin for retrieving comments by post_id and comment_id."""
 
     model = Comment

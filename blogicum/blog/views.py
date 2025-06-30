@@ -11,7 +11,6 @@ from django.views.generic import (CreateView, DeleteView, DetailView, ListView,
                                   UpdateView)
 
 from blogicum.settings import POSTS_PER_PAGE
-
 from .forms import CommentForm, PostForm, UserUpdateForm
 from .mixins import OnlyAuthorMixin, CommentMixin
 from .models import Category, Comment, Post
@@ -19,22 +18,6 @@ from .models import Category, Comment, Post
 User = get_user_model()
 
 POST_NOT_FOUND_MESSAGE = 'Post Not Found.'
-
-
-def get_user(username):
-    """Return the user object based on the provided username."""
-    return get_object_or_404(User, username=username)
-
-
-def get_published_category(category_slug):
-    """Return a published category based on the provided slug."""
-    return (
-        get_object_or_404(
-            Category,
-            slug=category_slug,
-            is_published=True
-        )
-    )
 
 
 def get_posts(is_published_only=False, is_comments_count_required=False):
@@ -85,13 +68,17 @@ class PostsListView(ListView):
 class ProfileDetailView(ListView):
     """Display a user's profile and their posts."""
 
-    model = User
     template_name = 'blog/profile.html'
     paginate_by = POSTS_PER_PAGE
 
+    def get_user(self):
+        """Return the user object based on the username."""
+        return get_object_or_404(User, username=self.kwargs['username'])
+
     def get_queryset(self):
-        user = get_user(self.kwargs['username'])
-        if self.request.user.is_authenticated and self.request.user == user:
+
+        user = self.get_user()
+        if self.request.user == user:
             posts = get_posts(
                 is_published_only=False,
                 is_comments_count_required=True
@@ -110,7 +97,7 @@ class ProfileDetailView(ListView):
         page_number = self.request.GET.get('page')
         page_obj = paginator.get_page(page_number)
         context = {
-            'profile': get_user(self.kwargs['username']),
+            'profile': self.get_user(),
             'page_obj': page_obj
         }
         return context
@@ -136,12 +123,21 @@ class ProfileUpdateView(LoginRequiredMixin, UpdateView):
 class CategoryListView(ListView):
     """Display all posts related to the requested category."""
 
-    model = Post
     template_name = 'blog/category.html'
     paginate_by = POSTS_PER_PAGE
 
+    def get_published_category(self):
+        """Return a published category based on the slug."""
+        return (
+            get_object_or_404(
+                Category,
+                slug=self.kwargs['category_slug'],
+                is_published=True
+            )
+        )
+
     def get_queryset(self):
-        category = get_published_category(self.kwargs['category_slug'])
+        category = self.get_published_category()
         return (
             get_posts(is_published_only=True, is_comments_count_required=True)
             .filter(category=category)
@@ -149,9 +145,7 @@ class CategoryListView(ListView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['category'] = (
-            get_published_category(self.kwargs['category_slug'])
-        )
+        context['category'] = self.get_published_category()
         return context
 
 
