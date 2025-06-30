@@ -1,7 +1,6 @@
 from django.contrib.auth import get_user_model, logout
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.views import LogoutView
-from django.core.paginator import Paginator
 from django.db.models import Count
 from django.http import Http404
 from django.shortcuts import get_object_or_404, render
@@ -76,19 +75,11 @@ class ProfileDetailView(ListView):
         return get_object_or_404(User, username=self.kwargs['username'])
 
     def get_queryset(self):
-
         user = self.get_user()
-        if self.request.user == user:
-            posts = get_posts(
-                is_published_only=False,
-                is_comments_count_required=True
-            )
-        else:
-            posts = get_posts(
-                is_published_only=True,
-                is_comments_count_required=True
-            )
-        posts = posts.filter(author=user)
+        posts = get_posts(
+            is_published_only=(not self.request.user == user),
+            is_comments_count_required=True
+        ).filter(author=user)
         return posts
 
     def get_context_data(self, **kwargs):
