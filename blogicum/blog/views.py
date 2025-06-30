@@ -77,7 +77,7 @@ class ProfileDetailView(ListView):
     def get_queryset(self):
         user = self.get_user()
         posts = get_posts(
-            is_published_only=(not self.request.user == user),
+            is_published_only=(self.request.user != user),
             is_comments_count_required=True
         ).filter(author=user)
         return posts
