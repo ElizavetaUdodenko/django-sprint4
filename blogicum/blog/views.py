@@ -93,13 +93,7 @@ class ProfileDetailView(ListView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        paginator = Paginator(self.get_queryset(), POSTS_PER_PAGE)
-        page_number = self.request.GET.get('page')
-        page_obj = paginator.get_page(page_number)
-        context = {
-            'profile': self.get_user(),
-            'page_obj': page_obj
-        }
+        context['profile'] = self.get_user()
         return context
 
 
